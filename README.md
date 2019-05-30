@@ -9,39 +9,41 @@ as well as the [Node 10.x/11.x implementations from LambCI](https://github.com/l
 
 It's still very alpha, but this document contains a step-by-step guide for getting things started.
 
-Note: there's now a publicly available layer with the runtime available with arn `arn:aws:lambda:eu-west-1:313836948343:layer:lumo-runtime:8`, so you should be able to just skip ahead to [Create function arhive](#create-function-archive) and use that arn.
+### Compiling Lumo
 
-### Get the pre-built version of Lumo
+In order to interpret ClojureScript in an AWS Lambda context, you need a static build of Lumo with all libraries included.
 
-In order to execute Lumo in an AWS Lambda context, you need a static build with all libraries included. 
+If are curious about the nitty gritty details, check the following blog post:
 
-You can either get it from here: https://github.com/grav/aws-lumo-cljs-runtime/releases/tag/v1.9 or ...
+ * [Compile the Lumo ClojureScript interpreter for AWS Lambda](https://andrearichiardi.com/blog/posts/aws-lambda-runtime-lumo.html)
 
-### ... or clone Lumo fork and build it
-The fork of Lumo at https://github.com/grav/lumo is prepared for creating a
-static build of Lumo:
+First things first, pull down [the docker image](https://cloud.docker.com/repository/docker/arichiardi/lumo-musl-ami):
 
-```
-git clone git@github.com:grav/lumo
+```shell
+docker pull arichiardi/lumo-musl-ami
 ```
 
-Build Docker image in this repo:
-```
-cd /path/to/aws-lumo-cljs-runtime
-docker build . -t ami-lumo
+Second, clone `lumo`:
+
+```shell
+git clone git@github.com:anmonteiro/lumo   # anywhere on your filesystem
 ```
 
-Build Lumo, pointing out the fork of Lumo:
-```
-docker run -v /path/to/lumo:/lumo --rm ami-lumo \
+Finally, build using the image:
+
+```shell
+docker run -v /path/to/lumo:/lumo -v /home/user/.m2:/root/.m2 -v /home/user/.boot/cache:/.boot/cache --rm arichiardi/lumo-musl-ami
 ```
 
-You'll get an error in the end, but an executable will nevertheless be created in `/path/to/lumo/build/lumo`.
+The `/root/.m2` and `/.boot/cache` mappings are optional but recommended for
+avoiding downloading dependencies multiple times.
+
+The (long) process will compile the lumo static binary under `build`.
 
 ### Create the runtime archive
 
-```
-zip -j runtime.zip bootstrap /path/to/lumo runtime.cljs
+```shell
+zip -j runtime.zip bootstrap /path/to/build/lumo runtime.cljs
 ```
 
 The flag `-j` just ignores paths and puts everything in the archive root.
@@ -50,47 +52,58 @@ The flag `-j` just ignores paths and puts everything in the archive root.
 
 A layer can be used by a lambda to pull in additional code. In this context, the layer contains the actual runtime:
 
-```
+```shell
 aws lambda publish-layer-version --layer-name lumo-runtime --zip-file fileb://runtime.zip
 ```
 
 You'll get an `arn` with a layer version back, which you'll need when configurating the lambda.
 
-### Create function archive
+#### Using the Makefile
 
+For convenience, the above operations can also be executed with `make`:
+
+```shell
+make clean (will delete the runtime.zip if necessary)
+LUMO_BIN_PATH=/path/to/build/lumo make
+make publish
 ```
+
+### Try the demo lambda
+
+#### Create function archive
+
+```shell
 zip -r function.zip my_package
 ```
 
 The `my_package` dir in this repo contains a simple handler, but you can provide your own.
 
-### Create the lambda
+#### Upload and invoke
 
 For the `--role` parameter, you must supply a role that can execute lambdas.
 See https://docs.aws.amazon.com/lambda/latest/dg/runtimes-walkthrough.html#runtimes-walkthrough-prereqs
 
 The `--handler` parameter must correspond to the directory structure of the ClojureScript code that you provide:
 
-```
+```shell
 aws lambda create-function --function-name test-lumo --zip-file fileb://function.zip --handler my-package.my-ns/my-handler --runtime provided --role arn:aws:iam::xxx:role/lambda-role
 ```
 
 Use the layer `arn` that you received when publishing the layer, including the layer version, to configure the lambda:
 
-```
+```shell
 aws lambda update-function-configuration --function-name test-lumo --layers arn:aws:lambda:eu-west-1:xxx:layer:lumo-runtime:1
 ```
 
-Note that you can also use the publicly available version of the layer: `arn:aws:lambda:eu-west-1:313836948343:layer:lumo-runtime:8`
+#### Invoke the lambda
 
-### Invoke the lambda
-```
+```shell
 aws lambda invoke --function-name test-lumo --payload '{"foo":42}' response.txt
 ```
 
 You should receive something like this in `response.txt`:
 
-```
+```json
 {
   "hello": "Hello from my-handler!",
   "input": {
@@ -103,14 +116,4 @@ You should receive something like this in `response.txt`:
     }
   }
 }
-```
-
-### Using the Makefile
-
-For convenience, the above operations can also be executed with `make`:
-
-```
-make clean (if necessary)
-LUMO_BIN_PATH=/path/to/lumo make
-make publish
 ```
