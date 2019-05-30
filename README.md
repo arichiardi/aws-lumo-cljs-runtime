@@ -1,3 +1,12 @@
+# AWS Lambda Runtime for ClojureScript's Lumo
+
+---
+
+_This is slightly ahead of [grav/aws-lumo-cljs-runtime](https://github.com/grav/aws-lumo-cljs-runtime) - Thanks a lot Mikkel!_
+
+---
+
+
 This repo contains an implementation of a [custom AWS Lambda runtime](https://docs.aws.amazon.com/lambda/latest/dg/runtimes-custom.html)
 that enables executions of [ClojureScript](http://clojurescript.org) code in AWS Lambda without any pre-compilation.
 
